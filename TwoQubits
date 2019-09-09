@@ -1,0 +1,379 @@
+" Adaptative process based on measures with reiforcement learning algorithm to Eigensolver 2 qubit full version "
+
+# author: Francisco Albarran-Arriagada
+# Shanghai University
+# April 2019
+
+import numpy as np
+import scipy.io as sio
+import matplotlib.pyplot as plt
+from qutip import *
+import pickle
+
+" Constant "
+R=0.9               # Reward rate
+nu=2
+P=nu/R
+s=1/2               # Spin number of each system
+d=int(2*s+1)        # Dimension of each system
+N0=400              # Number of iterations state 0
+N1=400              # Number of iterations state 1
+N2=10              # Number of iterations state 2              
+NI=1000             # Number of repetitions
+
+
+" Operators "
+Sx=jmat(s,'x')      # Spin-x operator
+Sy=jmat(s,'y')      # Spin-y operator
+Sz=jmat(s,'z')      # Spin-z operator
+e=qeye(d)           # d-simensional Identity
+
+" States "
+GR=basis(2,0)               # State |0>
+EX=basis(2,1)               # State |1>
+
+S0=tensor(GR,GR)            # State |00>
+S1=tensor(GR,EX)            # State |01>
+S2=tensor(EX,GR)            # State |10>
+S3=tensor(EX,EX)            # State |11>
+
+" Matrix elements "
+DM00=S0*S0.dag()
+DM01=S0*S1.dag()
+DM02=S0*S2.dag()
+DM03=S0*S3.dag()
+
+DM10=S1*S0.dag()
+DM11=S1*S1.dag()
+DM12=S1*S2.dag()
+DM13=S1*S3.dag()
+
+DM20=S2*S0.dag()
+DM21=S2*S1.dag()
+DM22=S2*S2.dag()
+DM23=S2*S3.dag()
+
+DM30=S3*S0.dag()
+DM31=S3*S1.dag()
+DM32=S3*S2.dag()
+DM33=S3*S3.dag()
+
+" Array to save fidelities and windows of searching "
+
+F0max=np.zeros([N0+N1+N2+1,NI])
+F1max=np.zeros([N0+N1+N2+1,NI])
+F2max=np.zeros([N0+N1+N2+1,NI])
+F3max=np.zeros([N0+N1+N2+1,NI])
+W=np.zeros([N0+N1+N2+1,NI])
+
+Wmax=1                # Initial maximal change of the angle
+for n in range(NI):
+    
+    " Operator "
+    #Haux=rand_herm(4, density=10, dims=[[2, 2], [2, 2]])*10
+    Haux=0.5*(DM00+DM33+DM03+DM30)-0.5*(DM00+DM33-DM03-DM30)+1*(DM11+DM22+DM12+DM21)-1*(DM11+DM22-DM12-DM21)
+    Haux=-1j*Haux
+    M=Haux.expm()
+    E,V=M.eigenstates()
+    
+    " Entanglement of the eigen states "
+    EoF=[0]*4
+    EoF[0]=concurrence(V[0])
+    EoF[1]=concurrence(V[1])
+    EoF[2]=concurrence(V[2])
+    EoF[3]=concurrence(V[3])
+    
+    U=tensor(e,e)               # Initial rotation
+    
+    " For S0 "
+    w=1
+    W[0,n]=w
+    ST=U*S0                       # Initial state
+    
+    F0=fidelity(ST,V[0])
+    F1=fidelity(ST,V[1])
+    F2=fidelity(ST,V[2])
+    F3=fidelity(ST,V[3])    
+    F0max[0,n]=np.max([F0,F1,F2,F3])
+    
+    F0=fidelity(U*S1,V[0])
+    F1=fidelity(U*S1,V[1])
+    F2=fidelity(U*S1,V[2])
+    F3=fidelity(U*S1,V[3])    
+    F1max[0,n]=np.max([F0,F1,F2,F3])
+    
+    F0=fidelity(U*S2,V[0])
+    F1=fidelity(U*S2,V[1])
+    F2=fidelity(U*S2,V[2])
+    F3=fidelity(U*S2,V[3])    
+    F2max[0,n]=np.max([F0,F1,F2,F3])
+    
+    F0=fidelity(U*S3,V[0])
+    F1=fidelity(U*S3,V[1])
+    F2=fidelity(U*S3,V[2])
+    F3=fidelity(U*S3,V[3])    
+    F3max[0,n]=np.max([F0,F1,F2,F3])
+
+    
+    for k in range(0,N0):
+        
+        ST2=(M*ST).unit()                # Action of the environment
+        STaux=(U.dag())*ST2
+        p00=(fidelity(S0,STaux))**2
+        p01=(fidelity(S1,STaux))**2
+        p10=(fidelity(S2,STaux))**2
+        p11=(fidelity(S3,STaux))**2
+        
+        " Random angles "
+        angx=2*np.pi*w*(np.random.random()-0.5)
+        angy=2*np.pi*w*(np.random.random()-0.5)
+        angz=2*np.pi*w*(np.random.random()-0.5)
+        
+        r=np.random.random()
+        
+        if r<p00:                     # Measure |00>
+            u=tensor(e,e)
+            w=R*w
+        elif r>p00 and r<(p00+p01):                       # Measure |01>
+            X=0.5*(DM01+DM10)
+            Y=0.5*1j*(-DM01+DM10)
+            Z=0.5*(DM00-DM11)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        elif r>(p00+p01) and r<(p00+p01+p10):                             # Measure |10>
+            X=0.5*(DM02+DM20)
+            Y=0.5*1j*(-DM02+DM20)
+            Z=0.5*(DM00-DM22)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        else:                                   # Measure |11>
+            X=0.5*(DM03+DM30)
+            Y=0.5*1j*(-DM03+DM30)
+            Z=0.5*(DM00-DM33)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        ### END IF ###
+        
+        if w>1:
+            w=1
+        ### END IF ###
+        U=U*u                       # Total U operator
+        ST=(U*S0)                   # New state for the next iteration
+        F0=fidelity(U*S0,V[0])
+        F1=fidelity(U*S0,V[1])
+        F2=fidelity(U*S0,V[2])
+        F3=fidelity(U*S0,V[3])
+        F0max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S1,V[0])
+        F1=fidelity(U*S1,V[1])
+        F2=fidelity(U*S1,V[2])
+        F3=fidelity(U*S1,V[3])
+        F1max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S2,V[0])
+        F1=fidelity(U*S2,V[1])
+        F2=fidelity(U*S2,V[2])
+        F3=fidelity(U*S2,V[3])
+        F2max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S3,V[0])
+        F1=fidelity(U*S3,V[1])
+        F2=fidelity(U*S3,V[2])
+        F3=fidelity(U*S3,V[3])
+        F3max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        W[k+1,n]=w
+    
+    ### END FOR k ###
+       
+    " For S1 "
+    w=1
+    ST=U*S1
+    W[N0,n]=w 
+     
+    for k in range(N0,N0+N1): 
+
+        ST2=(M*ST).unit()                # Action of the environment
+        STaux=(U.dag())*ST2
+        p00=(fidelity(S0,STaux))**2
+        p01=(fidelity(S1,STaux))**2
+        p10=(fidelity(S2,STaux))**2
+        p11=(fidelity(S3,STaux))**2
+        
+        " Random angles "
+        angx=2*np.pi*w*(np.random.random()-0.5)
+        angy=2*np.pi*w*(np.random.random()-0.5)
+        angz=2*np.pi*w*(np.random.random()-0.5)
+        
+        r=np.random.random()
+        
+        if r<p01:                     # Measure |01>
+            u=tensor(e,e)
+            w=R*w
+        elif r>p01 and r<(p01+p10):                       # Measure |10>
+            X=0.5*(DM12+DM21)
+            Y=0.5*1j*(-DM12+DM21)
+            Z=0.5*(DM11-DM22)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        elif r>(p01+p10) and r<(p01+p10+p11):                             # Measure |11>
+            X=0.5*(DM13+DM31)
+            Y=0.5*1j*(-DM13+DM31)
+            Z=0.5*(DM11-DM33)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        else:                                   # Measure |00>
+            u=tensor(e,e)
+        ### END IF ###
+        
+        if w>1:
+            w=1
+        ### END IF ###
+        U=U*u                       # Total U operator
+        ST=(U*S1)                   # New state for the next iteration
+        F0=fidelity(U*S0,V[0])
+        F1=fidelity(U*S0,V[1])
+        F2=fidelity(U*S0,V[2])
+        F3=fidelity(U*S0,V[3])
+        F0max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S1,V[0])
+        F1=fidelity(U*S1,V[1])
+        F2=fidelity(U*S1,V[2])
+        F3=fidelity(U*S1,V[3])
+        F1max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S2,V[0])
+        F1=fidelity(U*S2,V[1])
+        F2=fidelity(U*S2,V[2])
+        F3=fidelity(U*S2,V[3])
+        F2max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S3,V[0])
+        F1=fidelity(U*S3,V[1])
+        F2=fidelity(U*S3,V[2])
+        F3=fidelity(U*S3,V[3])
+        F3max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        W[k+1,n]=w
+        
+    ### END FOR k ###
+        
+    " For S2 and S3 "
+    w=1
+    ST=U*S2
+    W[N0+N1]=w 
+    
+    for k in range(N0+N1,N0+N1+N2):
+        
+        ST2=(M*ST).unit()                # Action of the environment
+        STaux=(U.dag())*ST2
+        p00=(fidelity(S0,STaux))**2
+        p01=(fidelity(S1,STaux))**2
+        p10=(fidelity(S2,STaux))**2
+        p11=(fidelity(S3,STaux))**2
+        
+        " Random angles "
+        angx=2*np.pi*w*(np.random.random()-0.5)
+        angy=2*np.pi*w*(np.random.random()-0.5)
+        angz=2*np.pi*w*(np.random.random()-0.5)
+        
+        r=np.random.random()
+        
+        if r<p10:                     # Measure |10>
+            u=tensor(e,e)
+            w=R*w
+            
+        elif r>p10 and r<(p10+p11):                       # Measure |11>
+            X=0.5*(DM23+DM32)
+            Y=0.5*1j*(-DM23+DM32)
+            Z=0.5*(DM22-DM33)
+            
+            RX=(-1j*angx*X).expm()
+            RY=(-1j*angy*Y).expm()
+            RZ=(-1j*angz*Z).expm()
+            
+            u=RY*RZ*RX
+            w=P*w
+        else:                     # Measure |00> or |01>              
+            u=tensor(e,e)
+        ### END IF ###
+        
+        if w>1:
+            w=1
+        ### END IF ###
+        U=U*u                       # Total U operator
+        ST=(U*S2)                   # New state for the next iteration
+        
+        F0=fidelity(U*S0,V[0])
+        F1=fidelity(U*S0,V[1])
+        F2=fidelity(U*S0,V[2])
+        F3=fidelity(U*S0,V[3])
+        F0max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S1,V[0])
+        F1=fidelity(U*S1,V[1])
+        F2=fidelity(U*S1,V[2])
+        F3=fidelity(U*S1,V[3])
+        F1max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S2,V[0])
+        F1=fidelity(U*S2,V[1])
+        F2=fidelity(U*S2,V[2])
+        F3=fidelity(U*S2,V[3])
+        F2max[k+1,n]=np.max([F0,F1,F2,F3])
+        
+        F0=fidelity(U*S3,V[0])
+        F1=fidelity(U*S3,V[1])
+        F2=fidelity(U*S3,V[2])
+        F3=fidelity(U*S3,V[3])
+        F3max[k+1,n]=np.max([F0,F1,F2,F3])   
+        
+        W[k+1,n]=w
+    
+    ### END FOR k ###
+    print(n)
+### END FOR n ###
+Fmax=[F0max,F1max,F2max,F3max]
+Fmean=[np.mean(F0max,axis=1),np.mean(F1max,axis=1),np.mean(F2max,axis=1),np.mean(F3max,axis=1)]
+Fstd=[np.std(F0max,axis=1),np.std(F1max,axis=1),np.std(F2max,axis=1),np.std(F3max,axis=1)]
+
+Wmean=np.mean(W,axis=1)
+Wstd=np.std(W,axis=1)
+
+NN=np.linspace(0,N0+N1+N2,N0+N1+N2+1)
+
+plt.plot(NN,Fmean[0])
+plt.plot(NN,Fmean[1])
+plt.plot(NN,Fmean[2])
+plt.plot(NN,Fmean[3])
+
+" Saving data "
+with open('Data/TwoQubit/TwoQubitBell09nu2.dat', 'wb') as f:
+    pickle.dump([NN,Fmean,Fstd,Fmax,W,Wmean,Wstd,N0,N1,N2,R], f)
