@@ -1,0 +1,139 @@
+" Adaptative process based on measures with reiforcement learning algorithm to Eigensolver "
+# author: Francisco Albarran-Arriagada
+# Shanghai University
+# April 2019
+
+import numpy as np
+import scipy.io as sio
+import matplotlib.pyplot as plt
+from qutip import *
+import pickle
+
+" Constant "
+R=0.8               # Reward rate
+Parr=[1/R, 1.5/R, 2/R]
+lp=len(Parr)
+s=1/2               # Spin number of each system
+d=int(2*s+1)        # Dimension of each system
+N=500               # Number of iterations    
+NI=10             # Number of repetitions
+
+
+" Operators "
+Sx=jmat(s,'x')      # Spin-x operator
+Sy=jmat(s,'y')      # Spin-y operator
+Sz=jmat(s,'z')      # Spin-z operator
+e=qeye(d)           # d-simensional Identity
+
+" States "
+GR=basis(2,0)               # State |0>
+EX=basis(2,1)               # State |1>
+
+" Array to save fidelities and windows of searching "
+
+F0max=np.zeros([N+1,NI])
+DE0=np.zeros([N+1,NI])
+DE1=np.zeros([N+1,NI])
+W=np.zeros([N+1,NI])
+Wp=[0]*lp
+Fp=[0]*lp
+DE0p=[0]*lp
+DE1p=[0]*lp
+FSTDp=[0]*lp
+WSTDp=[0]*lp
+
+Wmax=1                # Initial maximal change of the angle
+
+for p in range(lp):
+    P=Parr[p]
+    for n in range(NI):
+        
+        " Operator "
+        #Haux=rand_herm(2, density=10, dims=[[2],[2]])
+        OE=Sx
+        Haux=-1j*OE
+        M=Haux.expm()
+        E,V=M.eigenstates()
+    
+        w=1
+        W[0,n]=w
+        
+        U=tensor(e)               # Initial rotation
+        
+        F0=fidelity(U*GR,V[0])
+        F1=fidelity(U*GR,V[1])
+        F0max[0,n]=np.max([F0,F1])
+        
+        dE0=abs(expect(OE,U*GR)-expect(OE,V[0]))/abs(expect(OE,V[0]))
+        dE1=abs(expect(OE,U*GR)-expect(OE,V[1]))/abs(expect(OE,V[1]))
+        DE0[0,n]=np.min([dE0,dE1])
+        
+        dE0=abs(expect(OE,U*EX)-expect(OE,V[0]))/abs(expect(OE,V[0]))
+        dE1=abs(expect(OE,U*EX)-expect(OE,V[1]))/abs(expect(OE,V[1]))
+        DE1[0,n]=np.min([dE0,dE1])
+        
+        for k in range(0,N):
+            ST=U*GR                             # Initial state
+            ST2=(M*ST).unit()                   # Action of the environment
+            STaux=(U.dag())*ST2
+            p0=(fidelity(GR,STaux))**2
+            
+            " Random angles "
+            angx=2*np.pi*w*(np.random.random()-0.5)
+            angy=2*np.pi*w*(np.random.random()-0.5)
+            angz=2*np.pi*w*(np.random.random()-0.5)
+            
+            r=np.random.random()
+            
+            if r<p0:                        # Measure |0>
+                u=tensor(e)
+                w=R*w
+            else:                           # Measure |1>         
+                RX=(-1j*angx*Sx).expm()
+                RY=(-1j*angy*Sy).expm()
+                RZ=(-1j*angz*Sz).expm()
+                
+                u=RY*RZ*RX
+                w=P*w
+            ### END IF ###
+            
+            if w>1:
+                w=1
+            ### END IF ###
+            U=U*u                       # Total U operator
+            F0=fidelity(U*GR,V[0])
+            F1=fidelity(U*GR,V[1])
+            F0max[k+1,n]=np.max([F0,F1])
+            
+            dE0=abs(expect(OE,U*GR)-expect(OE,V[0]))/abs(expect(OE,V[0]))
+            dE1=abs(expect(OE,U*GR)-expect(OE,V[1]))/abs(expect(OE,V[1]))
+            DE0[k+1,n]=np.min([dE0,dE1])
+            
+            dE0=abs(expect(OE,U*EX)-expect(OE,V[0]))/abs(expect(OE,V[0]))
+            dE1=abs(expect(OE,U*EX)-expect(OE,V[1]))/abs(expect(OE,V[1]))
+            DE1[k+1,n]=np.min([dE0,dE1])
+            
+            W[k+1,n]=w
+        
+        ### END FOR LOOP k ###
+           
+        print([P*R,n])
+    ### END FOR LOOP n ###
+    Fp[p]=np.mean(F0max,axis=1)
+    Wp[p]=np.mean(W,axis=1)
+    DE0p[p]=np.mean(DE0,axis=1)
+    DE1p[p]=np.mean(DE1,axis=1)
+    FSTDp[p]=np.std(F0max,axis=1)
+    WSTDp[p]=np.std(W,axis=1)
+### END FOR LOOP p ###
+
+
+
+
+
+NN=np.linspace(0,N,N+1)
+
+
+#" Saving data "
+#with open('Data/OneQubit/OneQubitSx08RP1-2.dat', 'wb') as f:
+#    pickle.dump([NN,Fp,FSTDp,Wp,WSTDp,DE0,DE0p,DE1,DE1p,R,P], f)
